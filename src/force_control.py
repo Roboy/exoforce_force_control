@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
 
 import rospy
-from std_msgs.msg import Float32
-
-from simple_pid import PID
-
-from roboy_simulation_msgs.msg import TendonUpdate
 from roboy_middleware_msgs.msg import MotorCommand
 from roboy_middleware_msgs.srv import ControlMode, ControlModeRequest
+from roboy_simulation_msgs.msg import TendonUpdate
+from simple_pid import PID
+from std_msgs.msg import Float32
+from std_srvs.srv import Trigger, TriggerResponse
 
-from load_cell import LoadCell, ConnectionError
-from com_utils import Topics, Services
+from com_utils import Services, Topics
+from load_cell import ConnectionError, LoadCell
+
+DEBUG = False
 
 class TendonForceController:
 	"""This class handles the force controller for one individual tendon.
@@ -38,17 +39,14 @@ class TendonForceController:
 		self.pwm_limit = conf['pwm_limit']
 		self.frequency = conf['freq']
 
-		self.pid = PID(self.kp, self.ki, self.kd, sample_time=1/self.frequency, output_limits=(-self.pwm_limit, self.pwm_limit))
-
-		self.target_force = 10
 		self.ready = False
 		self.detached = False
-
-		self.pwm_set_point = 0
 
 		self.force_sensor = LoadCell(conf['load_cell_conf'])
 		self.force_sensor.setOnAttachHandler(self.onAttach)
 		self.force_sensor.setOnDetachHandler(self.onDetach)
+
+		self.reset()
 
 	@property
 	def target_force(self):
@@ -58,6 +56,12 @@ class TendonForceController:
 	def target_force(self, value):
 		self.pid.setpoint = value
 		self._target_force = value
+
+	def reset(self):
+		self.pid = PID(self.kp, self.ki, self.kd, sample_time=1/self.frequency, output_limits=(-self.pwm_limit, self.pwm_limit))
+
+		self.target_force = 0
+		self.pwm_set_point = 0
 
 	def onAttach(self, channel):
 		"""Event handler for the attach event of the LoadCell object.
@@ -117,13 +121,16 @@ class TendonForceController:
 
 		self.pwm_set_point += self.pid(current_force) * self.direction
 		
-		if self.pwm_set_point > self.pwm_limit: self.pwm_set_point = self.pwm_limit
-		if self.pwm_set_point < -self.pwm_limit: self.pwm_set_point = -self.pwm_limit
+		if self.pwm_set_point > self.pwm_limit:
+			self.pwm_set_point = self.pwm_limit
+		elif self.pwm_set_point < -self.pwm_limit:
+			self.pwm_set_point = -self.pwm_limit
 
 		rospy.loginfo(f"Tendon [{self.id}] target [{self.target_force:4.2f}] actual [{current_force: 4.2f}] pwm [{self.pwm_set_point:.0f}]")
-
-		# return pwm_set_point
-		return self.target_force, current_force, self.pwm_set_point, self.pid.components
+		if DEBUG:
+			return self.target_force, current_force, self.pwm_set_point, self.pid.components
+		else:
+			return self.pwm_set_point
 
 class ForceControl:
 	"""This class handles the force control ROS node.
@@ -135,20 +142,32 @@ class ForceControl:
 			-
 		
 		"""
+		self.started = False
 		self.refresh_rate = rospy.get_param('refresh_rate', None)
-		self.rate = None if self.refresh_rate is None else rospy.Rate(self.refresh_rate)
+		
+		if self.refresh_rate is None:
+			error = "refresh_rate not set"
+			rospy.logerr(f"Cannot start node, {error}!")
+			rospy.signal_shutdown(error)
+		else:
+			self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
 
-		controllers_conf = self.get_controllers_conf()
+			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
 
-		self.controllers = []
-		for conf in controllers_conf:
-			self.controllers.append(TendonForceController(conf))
+			self.start_controllers()
+			self.init_roboy_plexus()
 
-		rospy.Subscriber(Topics.TENDON_FORCE, TendonUpdate, self.set_target_force)
+			if DEBUG:
+				# Debugging publishers
+				self.target_pub = rospy.Publisher("/target_force", Float32, queue_size=1)
+				self.actual_pub = rospy.Publisher("/actual_force", Float32, queue_size=1)
+				self.control_pub = rospy.Publisher("/control_value", Float32, queue_size=1)
+				self.p_value_pub = rospy.Publisher("/p_value", Float32, queue_size=1)
+				self.i_value_pub = rospy.Publisher("/i_value", Float32, queue_size=1)
+				self.d_value_pub = rospy.Publisher("/d_value", Float32, queue_size=1)
 
-		self.start_controllers()
-		self.init_roboy_plexus()
-		self.start_node()
+			rospy.Service(Services.START_FORCE_CONTROL, Trigger, self.start_node)
+			rospy.Service(Services.STOP_FORCE_CONTROL, Trigger, self.stop_node)
 
 	def get_controllers_conf(self):
 		"""Reads node's parameters and builds list of configuration dictionaries.
@@ -191,11 +210,8 @@ class ForceControl:
 		
 		"""
 		self.motor_command_publisher = rospy.Publisher(Topics.MOTOR_COMMAND, MotorCommand, queue_size=1)
-
 		self.control_mode_client = rospy.ServiceProxy(Services.CONTROL_MODE, ControlMode)
-
-		self.control_mode_req = ControlModeRequest()
-		self.motor_command_msg = MotorCommand()
+		self.set_control_mode(3)
 
 	def start_controllers(self):
 		"""Connects controller with load cells.
@@ -214,7 +230,7 @@ class ForceControl:
 				rospy.logwarn(f"Failed to connect to load cell {controller.id}")
 				rospy.logdebug(f"Connection error to load cell {controller.id}: {e.message}")
 
-	def start_node(self):
+	def start_node(self, _):
 		"""Starts control loop.
 
 		Args:
@@ -224,26 +240,41 @@ class ForceControl:
 			-
 		
 		"""
-		if self.rate is None:
-			rospy.logerr("refresh_rate not set")
-		else:
-			self.set_control_mode(3)
-			self.control_loop()
+		self.started = True
+		self.loop_timer = rospy.Timer(rospy.Duration(1/self.refresh_rate), self.control_loop)
 
-	def get_controller(self, id):
+		return TriggerResponse(True, "Force Control node started")
+
+	def stop_node(self, _):
+		"""Stops control loop.
+
+		Args:
+			-
+
+		Returns:
+			-
+		
+		"""
+		self.started = False
+		self.loop_timer.shutdown()
+
+		for controller in self.controllers: controller.reset()
+		self.send_motor_commands()
+
+		return TriggerResponse(True, "Force Control node stopped")
+
+	def get_controller(self, controller_id):
 		"""Returns controller with requested id.
 
 		Args:
-			id (int): Id of desired controller.
+			controller_id (int): Id of desired controller.
 
 		Returns:
 			(TendonForceController): Contoller object.
 		
 		"""
-		for controller in self.controllers:
-			if controller.id == id:
-				return controller
-		return None
+		controller = [cont for cont in self.controllers if cont.id == controller_id]
+		return controller[0] if controller else None
 
 	def set_target_force(self, msg):
 		"""Set tendon target force callback.
@@ -255,6 +286,9 @@ class ForceControl:
 			-
 		
 		"""
+		if not self.started:
+			return
+		
 		controller = self.get_controller(msg.tendon_id)
 		if controller is None:
 			rospy.logwarn(f"Trying to set target force for tendon ({msg.tendon_id}) without controller.")
@@ -264,7 +298,7 @@ class ForceControl:
 			else:
 				controller.target_force = msg.force
 
-	def control_loop(self):
+	def control_loop(self, event):
 		"""Control loop.
 
 		Args:
@@ -274,33 +308,28 @@ class ForceControl:
 			-
 		
 		"""
-		target_pub = rospy.Publisher("/target_force", Float32, queue_size=1)
-		actual_pub = rospy.Publisher("/actual_force", Float32, queue_size=1)
-		control_pub = rospy.Publisher("/control_value", Float32, queue_size=1)
-		p_value_pub = rospy.Publisher("/p_value", Float32, queue_size=1)
-		i_value_pub = rospy.Publisher("/i_value", Float32, queue_size=1)
-		d_value_pub = rospy.Publisher("/d_value", Float32, queue_size=1)
-		while not rospy.is_shutdown():
-			motor_ids = []
-			set_points = []
-			for controller in self.controllers:
-				if controller.ready:
-					motor_ids.append(controller.id)
+		motor_ids = []
+		set_points = []
+		for controller in self.controllers:
+			if controller.ready:
+				motor_ids.append(controller.id)
+				if DEBUG:
 					target, actual, control, (p_value, i_value, d_value) = controller.getPwmSetPoint()
-					set_points.append(control)
 
-					target_pub.publish(target)
-					actual_pub.publish(actual)
-					control_pub.publish(control)
-					p_value_pub.publish(p_value)
-					i_value_pub.publish(i_value)
-					d_value_pub.publish(d_value)
+					self.target_pub.publish(target)
+					self.actual_pub.publish(actual)
+					self.control_pub.publish(control)
+					self.p_value_pub.publish(p_value)
+					self.i_value_pub.publish(i_value)
+					self.d_value_pub.publish(d_value)
+				else:
+					control = controller.getPwmSetPoint()
 
-			self.send_motor_commands(motor_ids, set_points)
-			
-			self.rate.sleep()
+				set_points.append(control)
 
-	def set_control_mode(self, mode, motor_ids=None, set_points=[]):
+		self.send_motor_commands(motor_ids, set_points)
+
+	def set_control_mode(self, mode, motor_ids=None, set_points=None):
 		"""Set motors control mode.
 
 		Args:
@@ -316,14 +345,16 @@ class ForceControl:
 			-
 		
 		"""
-		self.control_mode_req.legacy = False
-		self.control_mode_req.control_mode = mode
-		self.control_mode_req.motor_id = motor_ids if motor_ids is not None else [controller.id for controller in self.controllers]
-		self.control_mode_req.set_points = set_points if motor_ids is not None else [0] * len(self.control_mode_req.motor_id)
+		if motor_ids is None:
+			motor_ids = [controller.id for controller in self.controllers]
+		if set_points is None:
+			set_points = [0] * len(motor_ids)
+
+		assert len(motor_ids) == len(set_points)
 
 		try:
 			rospy.wait_for_service(Services.CONTROL_MODE, timeout=1.0)
-			self.control_mode_client(self.control_mode_req)
+			self.control_mode_client(ControlModeRequest(False, mode, motor_ids, set_points))
 		except rospy.exceptions.ROSException as e:
 			rospy.logerr(e)
 			rospy.signal_shutdown(e)
@@ -344,13 +375,12 @@ class ForceControl:
 		if set_points is None:
 			set_points = [0.0] * len(motor_ids)
 
-		self.motor_command_msg.legacy = False
-		self.motor_command_msg.motor = motor_ids
-		self.motor_command_msg.setpoint = set_points
+		assert len(motor_ids) == len(set_points)
 
-		self.motor_command_publisher.publish(self.motor_command_msg)
+		self.motor_command_publisher.publish(MotorCommand(False, motor_ids, set_points))
 
 
 if __name__ == "__main__":
 	rospy.init_node("force_control", disable_signals=True)
 	force_control = ForceControl()
+	rospy.spin()

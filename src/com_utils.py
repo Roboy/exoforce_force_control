@@ -1,5 +1,4 @@
 
-
 class Topics:
 
 	# roboy plexus
@@ -7,11 +6,13 @@ class Topics:
 	MOTOR_COMMAND 			= "/roboy/middleware/MotorCommand"
 
 	# force control
-	TENDON_FORCE			= "/roboy/middleware/TendonForce"
-
+	TARGET_FORCE			= "/exoforce/force/target"
 
 class Services:
 
 	# roboy plexus services
 	CONTROL_MODE 			= "/roboy/middleware/ControlMode"
 
+	# force control
+	START_FORCE_CONTROL		= "/exoforce/force/start"
+	STOP_FORCE_CONTROL		= "/exoforce/force/stop"
