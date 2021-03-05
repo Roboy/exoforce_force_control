@@ -148,7 +148,7 @@ class ForceControl:
 
 		self.start_controllers()
 		self.init_roboy_plexus()
-		self.star_node()
+		self.start_node()
 
 	def get_controllers_conf(self):
 		"""Reads node's parameters and builds list of configuration dictionaries.
@@ -170,6 +170,11 @@ class ForceControl:
 		kd = rospy.get_param('kd')
 		direction = rospy.get_param('direction')
 		pwm_limit = rospy.get_param('pwm_limit')
+		if len(kp) == 1: kp *= len(controllers_id)
+		if len(ki) == 1: ki *= len(controllers_id)
+		if len(kd) == 1: kd *= len(controllers_id)
+		if len(direction) == 1: direction *= len(controllers_id)
+		if len(pwm_limit) == 1: pwm_limit *= len(controllers_id)
 
 		load_cells_conf = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': s, 'channel': c} for i, o, f, s, c in zip(controllers_id, cal_offsets, cal_factors, serials, channels)]
 
@@ -209,7 +214,7 @@ class ForceControl:
 				rospy.logwarn(f"Failed to connect to load cell {controller.id}")
 				rospy.logdebug(f"Connection error to load cell {controller.id}: {e.message}")
 
-	def star_node(self):
+	def start_node(self):
 		"""Starts control loop.
 
 		Args:

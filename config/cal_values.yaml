@@ -1,0 +1,35 @@
+
+Calibration datetime: 2021-01-25 13:54:43.644161
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 586100
+channels: [0]
+cal_offset: [-4.806556e-06]
+cal_factor: [-7781.41450138835]
+
+Calibration datetime: 2021-01-25 15:28:22.660161
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585078
+channels: [0, 1, 2, 3]
+cal_offset: [-1.931563e-06, -3.354624e-06, -2.991408e-06, 4.554167e-06]
+cal_factor: [-7838.664445341756, -8076.355897434952, -8071.7174158760245, -8282.092537532657]
+
+Calibration datetime: 2021-01-25 15:33:14.329891
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585671
+channels: [0, 1, 2, 3]
+cal_offset: [-1.0947697e-05, -1.0473654e-05, -3.3660792e-05, -1.0131858e-05]
+cal_factor: [-8296.606413856856, -7956.613617122953, -7859.1931117957365, -8054.896166540559]
+
+Calibration datetime: 2021-01-25 15:38:59.718894
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585081
+channels: [0, 1, 2, 3]
+cal_offset: [-1.1753291e-05, -1.665205e-06, -5.789101e-06, -1.3516285e-05]
+cal_factor: [-8078.081494936741, -7955.929737499302, -7955.528898947196, -7934.5414674585645]
+
+Calibration datetime: 2021-01-25 15:41:49.450034
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585716
+channels: [0, 1, 2, 3]
+cal_offset: [-7.873401e-06, -8.640811e-06, -5.369075e-06, -9.134412e-06]
+cal_factor: [-8047.458618925634, -7797.13444299666, -7937.016560686648, -7928.506839783308]

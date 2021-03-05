@@ -1,18 +1,20 @@
 # ExoForce Force Control Package
 
 ## Setup
+
 *Tested on Ubuntu 20.04*
 - install python>=3.6
 - install [ROS Noetic Ninjemys](http://wiki.ros.org/noetic/Installation/Ubuntu)
 - install [Phidget22 libraries](https://www.phidgets.com/docs/OS_-_Linux#Quick_Downloads)
+
 ```bash
 # Creating ROS workspace
 mkdir -p force_ws/src
 
 # Cloning repos to src directory
 cd force_ws/src
-git clone https://github.com/Roboy/roboy_communication.git -b roboy3 # For the WS20 we need the following branch e0b1c2de7cd2084c87208fb10f6a004a3f7666fb
-git clone https://github.com/Roboy/bulletroboy.git
+git clone https://github.com/Roboy/roboy_communication.git -b roboy3 # For the WS20 we need to checkout to the following commit e0b1c2de7cd2084c87208fb10f6a004a3f7666fb
+git clone https://github.com/Roboy/exoforce_force_control.git
 
 # Building packages in workspace
 cd force_ws
@@ -29,6 +31,7 @@ pip3 install -r requirements.txt
 ```
 
 ## Usage
+
 To be able to run any node after the package is built, you need to source the workspace overlay.
 
 Run the force control node.
