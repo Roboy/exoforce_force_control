@@ -33,3 +33,17 @@ phidget_serial: 585716
 channels: [0, 1, 2, 3]
 cal_offset: [-7.873401e-06, -8.640811e-06, -5.369075e-06, -9.134412e-06]
 cal_factor: [-8047.458618925634, -7797.13444299666, -7937.016560686648, -7928.506839783308]
+
+Calibration datetime: 2021-03-06 14:16:57.290228
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585671
+channels: [2]
+cal_offset: [-3.063865e-05]
+cal_factor: [-7858.801949030666]
+
+Calibration datetime: 2021-03-06 14:35:51.559678
+# Force (Kg) = cal_factor * (VoltageRatio + cal_offset)
+phidget_serial: 585671
+channels: [2]
+cal_offset: [-3.320165e-06]
+cal_factor: [-7811.497040396405]

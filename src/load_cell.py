@@ -93,7 +93,16 @@ cal_factors = [76946.05648001497, 79410.51153687084, 79372.69350821163, 81081.84
 cal_offsets = [-4.806556e-06]
 cal_factors = [-7781.41450138835]
 
-configuration = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': phidget_serial, 'channel': i} for i, (o, f) in enumerate(zip(cal_offsets, cal_factors))]
+phidget_serial = 585671
+cal_offsets = [-3.320165e-06]
+cal_factors = [-7811.497040396405]
+
+
+# phidget_serial = 586100
+# cal_offsets = [-4.806556e-06]
+# cal_factors = [-7781.41450138835]
+
+configuration = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': phidget_serial, 'channel': 2} for i, (o, f) in enumerate(zip(cal_offsets, cal_factors))]
 
 if __name__ == "__main__":
 	import rospy
