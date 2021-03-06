@@ -60,7 +60,7 @@ class TendonForceController:
 	def reset(self):
 		self.pid = PID(self.kp, self.ki, self.kd, sample_time=1/self.frequency, output_limits=(-self.pwm_limit, self.pwm_limit))
 
-		self.target_force = 0
+		self.target_force = 4
 		self.pwm_set_point = 0
 
 	def onAttach(self, channel):
@@ -118,6 +118,9 @@ class TendonForceController:
 			return 0.0
 
 		current_force = self.force_sensor.readForce()
+
+		if self.target_force < 1 and current_force < 1:
+			return 0.0
 
 		self.pwm_set_point += self.pid(current_force) * self.direction
 		
@@ -180,14 +183,17 @@ class ForceControl:
 		
 		"""
 		controllers_id = rospy.get_param('controllers_id')
+		serials = rospy.get_param('serials')
+		assert len(serials) == len(controllers_id)
+		channels = rospy.get_param('channels')
+		assert len(channels) == len(controllers_id)
+		direction = rospy.get_param('direction')
+		assert len(direction) == len(controllers_id)
 		cal_offsets = rospy.get_param('cal_offset')
 		cal_factors = rospy.get_param('cal_factor')
-		serials = rospy.get_param('serials')
-		channels = rospy.get_param('channels')
 		kp = rospy.get_param('kp')
 		ki = rospy.get_param('ki')
 		kd = rospy.get_param('kd')
-		direction = rospy.get_param('direction')
 		pwm_limit = rospy.get_param('pwm_limit')
 		if len(kp) == 1: kp *= len(controllers_id)
 		if len(ki) == 1: ki *= len(controllers_id)
@@ -195,7 +201,7 @@ class ForceControl:
 		if len(direction) == 1: direction *= len(controllers_id)
 		if len(pwm_limit) == 1: pwm_limit *= len(controllers_id)
 
-		load_cells_conf = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': s, 'channel': c} for i, o, f, s, c in zip(controllers_id, cal_offsets, cal_factors, serials, channels)]
+		load_cells_conf = [{'tendon_id': i, 'cal_offset': cal_offsets[f"p{s}"][c], 'cal_factor': cal_factors[f"p{s}"][c], 'serial': s, 'channel': c} for i, s, c in zip(controllers_id, serials, channels)]
 
 		return [{'controller_id': index, 'kp': p, 'ki': i , 'kd': d, 'direction': di, 'pwm_limit': l,'load_cell_conf': conf, 'freq': self.refresh_rate} for index, p, i, d, di, l, conf in zip(controllers_id, kp, ki, kd, direction, pwm_limit, load_cells_conf)]
 		
@@ -255,11 +261,12 @@ class ForceControl:
 			-
 		
 		"""
-		self.started = False
-		self.loop_timer.shutdown()
+		if self.started:
+			self.started = False
+			self.loop_timer.shutdown()
 
-		for controller in self.controllers: controller.reset()
-		self.send_motor_commands()
+			for controller in self.controllers: controller.reset()
+			self.send_motor_commands()
 
 		return TriggerResponse(True, "Force Control node stopped")
 
@@ -354,7 +361,7 @@ class ForceControl:
 
 		try:
 			rospy.wait_for_service(Services.CONTROL_MODE, timeout=1.0)
-			self.control_mode_client(ControlModeRequest(False, mode, motor_ids, set_points))
+			self.control_mode_client(ControlModeRequest(False, mode, set_points, motor_ids))
 		except rospy.exceptions.ROSException as e:
 			rospy.logerr(e)
 			rospy.signal_shutdown(e)
