@@ -49,10 +49,11 @@ class LoadCell(VoltageRatioInput):
 		   	-
 
 		"""
-		try:
-			self.openWaitForAttachment(Phidget.DEFAULT_TIMEOUT)
-		except PhidgetException as e:
-			raise ConnectionError(e.details)
+		if not self.getAttached():
+			try:
+				self.openWaitForAttachment(Phidget.DEFAULT_TIMEOUT)
+			except PhidgetException as e:
+				raise ConnectionError(e.details)
 
 	def closeChannel(self):
 		"""Closes phidget channel.

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import sys
+
 import rospy
 from roboy_middleware_msgs.msg import MotorCommand
 from roboy_middleware_msgs.srv import ControlMode, ControlModeRequest
@@ -145,7 +147,6 @@ class ForceControl:
 			-
 		
 		"""
-		self.started = False
 		self.refresh_rate = rospy.get_param('refresh_rate', None)
 		
 		if self.refresh_rate is None:
@@ -153,7 +154,13 @@ class ForceControl:
 			rospy.logerr(f"Cannot start node, {error}!")
 			rospy.signal_shutdown(error)
 		else:
-			self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
+			self.started = False
+
+			selected_controllers = list(map(lambda x: int(x), sys.argv[1:]))
+			if selected_controllers:
+				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf() if conf['controller_id'] in selected_controllers]
+			else:
+				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
 
 			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
 
@@ -246,8 +253,10 @@ class ForceControl:
 			-
 		
 		"""
-		self.started = True
-		self.loop_timer = rospy.Timer(rospy.Duration(1/self.refresh_rate), self.control_loop)
+		if not self.started:
+			self.started = True
+			self.start_controllers()
+			self.loop_timer = rospy.Timer(rospy.Duration(1/self.refresh_rate), self.control_loop)
 
 		return TriggerResponse(True, "Force Control node started")
 
