@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import sys
 
 import rospy
@@ -13,13 +14,11 @@ from std_srvs.srv import Trigger, TriggerResponse
 from com_utils import Services, Topics
 from load_cell import ConnectionError, LoadCell
 
-DEBUG = False
-
 class TendonForceController:
 	"""This class handles the force controller for one individual tendon.
 
 	"""
-	def __init__(self, conf):
+	def __init__(self, conf, init_force=0.0, test=False):
 		"""
 		Args:
 			conf (dict): Dictionary with controller configuration:
@@ -29,8 +28,12 @@ class TendonForceController:
 							'kd' (float)			: Derivative gain.
 							'direction' (int)		: Direction of rotation of motor on cage.
 							'pwm_limit' (float)		: Maximum PWM value for the motors.
+							'min_force' (float)		: Minimal target force.			
+							'max_force' (float)		: Maximal target force.			
 							'freq' (int)			: Frequency of the control loop.
 							'load_cell_conf' (dict)	: Load cell configuration.
+			init_force (float): Initial target force.
+			test (bool): Test mode flag.
 		
 		"""
 		self.id = conf['controller_id']
@@ -40,6 +43,10 @@ class TendonForceController:
 		self.direction = conf['direction']
 		self.pwm_limit = conf['pwm_limit']
 		self.frequency = conf['freq']
+		self.min_force = conf['min_force']
+		self.max_force = conf['max_force']
+		self.test = test
+		self.init_force = init_force
 
 		self.ready = False
 		self.detached = False
@@ -56,13 +63,17 @@ class TendonForceController:
 
 	@target_force.setter
 	def target_force(self, value):
+		if value > self.max_force:
+			value = self.max_force
+		elif value < self.min_force:
+			value = self.min_force
 		self.pid.setpoint = value
 		self._target_force = value
 
 	def reset(self):
 		self.pid = PID(self.kp, self.ki, self.kd, sample_time=1/self.frequency, output_limits=(-self.pwm_limit, self.pwm_limit))
 
-		self.target_force = 4
+		self.target_force = self.init_force
 		self.pwm_set_point = 0
 
 	def onAttach(self, channel):
@@ -131,20 +142,20 @@ class TendonForceController:
 		elif self.pwm_set_point < -self.pwm_limit:
 			self.pwm_set_point = -self.pwm_limit
 
-		rospy.loginfo(f"Tendon [{self.id}] target [{self.target_force:4.2f}] actual [{current_force: 4.2f}] pwm [{self.pwm_set_point:.0f}]")
-		if DEBUG:
-			return self.target_force, current_force, self.pwm_set_point, self.pid.components
-		else:
-			return self.pwm_set_point
+		if self.test:
+			rospy.loginfo(f"Tendon [{self.id}] target [{self.target_force:4.2f}] actual [{current_force: 4.2f}] pwm [{self.pwm_set_point:.0f}]")
 
+		return self.target_force, current_force, self.pwm_set_point, self.pid.components
+		
 class ForceControl:
 	"""This class handles the force control ROS node.
 
 	"""
-	def __init__(self):
+	def __init__(self, test_tendon=None, test_force=None):
 		"""
 		Args:
-			-
+			test_tendon (int): If given only that tendon will be started for test.
+			test_force (float): If test_tendon is given this will be the force to test.
 		
 		"""
 		self.refresh_rate = rospy.get_param('refresh_rate', None)
@@ -156,28 +167,30 @@ class ForceControl:
 		else:
 			self.started = False
 
-			selected_controllers = list(map(lambda x: int(x), sys.argv[1:]))
-			if selected_controllers:
-				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf() if conf['controller_id'] in selected_controllers]
-			else:
-				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
+			if test_tendon is not None:
+				self.controllers = [TendonForceController(conf, init_force=test_force, test=True) for conf in self.get_controllers_conf() if conf['controller_id'] == test_tendon]
+				assert len(self.controllers) == 1, f"{len(self.controllers)} tendons with id {test_tendon} found in parameter file."
 
-			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
-
-			self.start_controllers()
-			self.init_roboy_plexus()
-
-			if DEBUG:
-				# Debugging publishers
+				# testing publisher
 				self.target_pub = rospy.Publisher("/target_force", Float32, queue_size=1)
 				self.actual_pub = rospy.Publisher("/actual_force", Float32, queue_size=1)
 				self.control_pub = rospy.Publisher("/control_value", Float32, queue_size=1)
 				self.p_value_pub = rospy.Publisher("/p_value", Float32, queue_size=1)
 				self.i_value_pub = rospy.Publisher("/i_value", Float32, queue_size=1)
 				self.d_value_pub = rospy.Publisher("/d_value", Float32, queue_size=1)
+			else:
+				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
+
+			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
+
+			# self.start_controllers()
+			# self.init_roboy_plexus()
 
 			rospy.Service(Services.START_FORCE_CONTROL, Trigger, self.start_node)
 			rospy.Service(Services.STOP_FORCE_CONTROL, Trigger, self.stop_node)
+			
+			if test_tendon is not None:
+				self.start_node(None)
 
 	def get_controllers_conf(self):
 		"""Reads node's parameters and builds list of configuration dictionaries.
@@ -202,15 +215,19 @@ class ForceControl:
 		ki = rospy.get_param('ki')
 		kd = rospy.get_param('kd')
 		pwm_limit = rospy.get_param('pwm_limit')
+		min_force = rospy.get_param('min_force')
+		max_force = rospy.get_param('max_force')
 		if len(kp) == 1: kp *= len(controllers_id)
 		if len(ki) == 1: ki *= len(controllers_id)
 		if len(kd) == 1: kd *= len(controllers_id)
 		if len(direction) == 1: direction *= len(controllers_id)
 		if len(pwm_limit) == 1: pwm_limit *= len(controllers_id)
+		if len(min_force) == 1: min_force *= len(controllers_id)
+		if len(max_force) == 1: max_force *= len(controllers_id)
 
 		load_cells_conf = [{'tendon_id': i, 'cal_offset': cal_offsets[f"p{s}"][c], 'cal_factor': cal_factors[f"p{s}"][c], 'serial': s, 'channel': c} for i, s, c in zip(controllers_id, serials, channels)]
 
-		return [{'controller_id': index, 'kp': p, 'ki': i , 'kd': d, 'direction': di, 'pwm_limit': l,'load_cell_conf': conf, 'freq': self.refresh_rate} for index, p, i, d, di, l, conf in zip(controllers_id, kp, ki, kd, direction, pwm_limit, load_cells_conf)]
+		return [{'controller_id': index, 'kp': p, 'ki': i , 'kd': d, 'direction': di, 'pwm_limit': l, 'min_force': minf, 'max_force': maxf, 'load_cell_conf': conf, 'freq': self.refresh_rate} for index, p, i, d, di, l, minf, maxf, conf in zip(controllers_id, kp, ki, kd, direction, pwm_limit, min_force, max_force, load_cells_conf)]
 		
 	def init_roboy_plexus(self):
 		"""Initiliazes objects to interface with the roboy plexus.
@@ -254,9 +271,11 @@ class ForceControl:
 		
 		"""
 		if not self.started:
+			rospy.loginfo("Starting Force Control node...")
 			self.started = True
 			self.start_controllers()
 			self.loop_timer = rospy.Timer(rospy.Duration(1/self.refresh_rate), self.control_loop)
+			rospy.loginfo("Force Control node started!")
 
 		return TriggerResponse(True, "Force Control node started")
 
@@ -271,11 +290,13 @@ class ForceControl:
 		
 		"""
 		if self.started:
+			rospy.loginfo("Stopping Force Control node...")
 			self.started = False
 			self.loop_timer.shutdown()
 
 			for controller in self.controllers: controller.reset()
 			self.send_motor_commands()
+			rospy.loginfo("Force Control node stopped!")
 
 		return TriggerResponse(True, "Force Control node stopped")
 
@@ -329,17 +350,15 @@ class ForceControl:
 		for controller in self.controllers:
 			if controller.ready:
 				motor_ids.append(controller.id)
-				if DEBUG:
-					target, actual, control, (p_value, i_value, d_value) = controller.getPwmSetPoint()
+				target, actual, control, (p_value, i_value, d_value) = controller.getPwmSetPoint()
 
+				if controller.test:
 					self.target_pub.publish(target)
 					self.actual_pub.publish(actual)
 					self.control_pub.publish(control)
 					self.p_value_pub.publish(p_value)
 					self.i_value_pub.publish(i_value)
 					self.d_value_pub.publish(d_value)
-				else:
-					control = controller.getPwmSetPoint()
 
 				set_points.append(control)
 
@@ -397,6 +416,12 @@ class ForceControl:
 
 
 if __name__ == "__main__":
+
+	parser = argparse.ArgumentParser(description="Force control node.")
+	parser.add_argument('-t', '--test', dest='test_tendon', help='Id of tendon to test', type=int)
+	parser.add_argument('-f', '--force', dest='test_force', default=0.0, help='Initial tendon force to test', type=float)
+	args = parser.parse_args()
+
 	rospy.init_node("force_control", disable_signals=True)
-	force_control = ForceControl()
+	force_control = ForceControl(args.test_tendon, args.test_force)
 	rospy.spin()
