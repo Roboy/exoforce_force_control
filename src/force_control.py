@@ -183,8 +183,8 @@ class ForceControl:
 
 			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
 
-			# self.start_controllers()
-			# self.init_roboy_plexus()
+			self.start_controllers()
+			self.init_roboy_plexus()
 
 			rospy.Service(Services.START_FORCE_CONTROL, Trigger, self.start_node)
 			rospy.Service(Services.STOP_FORCE_CONTROL, Trigger, self.stop_node)
