@@ -181,7 +181,7 @@ class ForceControl:
 			else:
 				self.controllers = [TendonForceController(conf) for conf in self.get_controllers_conf()]
 
-			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force)
+			rospy.Subscriber(Topics.TARGET_FORCE, TendonUpdate, self.set_target_force, queue_size=20)
 
 			self.start_controllers()
 			self.init_roboy_plexus()
