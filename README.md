@@ -36,5 +36,6 @@ To be able to run any node after the package is built, you need to source the wo
 
 Run the force control node.
 ```bash
+rosparam load force_ws/src/exoforce_force_control/config/force_control.yaml
 ./force_ws/src/exoforce_force_control/src/force_control.py
 ```
