@@ -88,22 +88,27 @@ class LoadCell(VoltageRatioInput):
 
 import time
 
-phidget_serial = 586100
-cal_offsets = [-1.433305e-06, -2.652407e-06, -4.034489e-06, 2.57045e-06]
-cal_factors = [76946.05648001497, 79410.51153687084, 79372.69350821163, 81081.8446537218]
-cal_offsets = [-4.806556e-06]
-cal_factors = [-7781.41450138835]
+# phidget_serial = 586100
+# cal_offsets = [-1.433305e-06, -2.652407e-06, -4.034489e-06, 2.57045e-06]
+# cal_factors = [76946.05648001497, 79410.51153687084, 79372.69350821163, 81081.8446537218]
+# cal_offsets = [-4.806556e-06]
+# cal_factors = [-7781.41450138835]
+
+# phidget_serial = 585671
+# cal_offsets = [-3.320165e-06]
+# cal_factors = [-7811.497040396405]
 
 phidget_serial = 585671
-cal_offsets = [-3.320165e-06]
-cal_factors = [-7811.497040396405]
+# channels: [0, 1, 2, 3]
+cal_offsets = [-1.0947697e-05, -1.0473654e-05, -3.3660792e-05, -1.0131858e-05]
+cal_factors = [-8296.606413856856, -7956.613617122953, -7859.1931117957365, -8054.896166540559]
 
 
 # phidget_serial = 586100
 # cal_offsets = [-4.806556e-06]
 # cal_factors = [-7781.41450138835]
 
-configuration = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': phidget_serial, 'channel': 2} for i, (o, f) in enumerate(zip(cal_offsets, cal_factors))]
+configuration = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': phidget_serial, 'channel': 1} for i, (o, f) in enumerate(zip(cal_offsets, cal_factors))]
 
 if __name__ == "__main__":
 	import rospy
@@ -111,7 +116,7 @@ if __name__ == "__main__":
 
 	pub = rospy.Publisher("/actual_force", Float32, queue_size=1)
 	rospy.init_node("load_cell_test")
-	rate = rospy.Rate(100)
+	rate = rospy.Rate(1)
 
 	channels = []
 	for i, conf in enumerate(configuration):
@@ -124,12 +129,12 @@ if __name__ == "__main__":
 			print(f"Failed to open load cell {i}: {e.message}")
 			
 	try:
-		while not rospy.is_shutdown():
+		while not rospy.is_shutdown() :
 			print([f"{channel.id}: [{channel.readForce():4.2f} N]" for channel in channels])
-			pub.publish(channels[0].force)
+			pub.publish(channels[0].readForce())
 			rate.sleep()
-	except (Exception, KeyboardInterrupt):
-		pass
+	except Exception as e:
+		print(e)
 
 	# Close your Phidgets once the program is done.
 	for channel in channels:
