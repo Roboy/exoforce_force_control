@@ -88,29 +88,31 @@ class LoadCell(VoltageRatioInput):
 
 import time
 
-phidget_serial = 586100
-cal_offsets = [-1.433305e-06, -2.652407e-06, -4.034489e-06, 2.57045e-06]
-cal_factors = [76946.05648001497, 79410.51153687084, 79372.69350821163, 81081.8446537218]
-cal_offsets = [-4.806556e-06]
-cal_factors = [-7781.41450138835]
-
-phidget_serial = 585671
-cal_offsets = [-3.320165e-06]
-cal_factors = [-7811.497040396405]
-
-
 # phidget_serial = 586100
+# cal_offsets = [-1.433305e-06, -2.652407e-06, -4.034489e-06, 2.57045e-06]
+# cal_factors = [76946.05648001497, 79410.51153687084, 79372.69350821163, 81081.8446537218]
 # cal_offsets = [-4.806556e-06]
 # cal_factors = [-7781.41450138835]
+
+# phidget_serial = 585671
+# cal_offsets = [-3.320165e-06]
+# cal_factors = [-7811.497040396405]
+
+
+phidget_serial = 586100
+cal_offsets = [-4.806556e-06]
+cal_factors = [-7781.41450138835]
 
 configuration = [{'tendon_id': i, 'cal_offset': o, 'cal_factor': f, 'serial': phidget_serial, 'channel': 2} for i, (o, f) in enumerate(zip(cal_offsets, cal_factors))]
 
 if __name__ == "__main__":
 	import rospy
-	from std_msgs.msg import Float32
+	# from std_msgs.msg import Float32
+	from roboy_middleware_msgs.msg import Force
 
-	pub = rospy.Publisher("/actual_force", Float32, queue_size=1)
-	rospy.init_node("load_cell_test")
+	pub = rospy.Publisher("/actual_force", Force, queue_size=1)
+	msg = Force()
+	rospy.init_node("load_cell_publisher")
 	rate = rospy.Rate(100)
 
 	channels = []
@@ -123,13 +125,15 @@ if __name__ == "__main__":
 		except ConnectionError as e:
 			print(f"Failed to open load cell {i}: {e.message}")
 			
-	try:
+	# try:
 		while not rospy.is_shutdown():
-			print([f"{channel.id}: [{channel.readForce():4.2f} N]" for channel in channels])
-			pub.publish(channels[0].force)
+			rospy.loginfo_throttle(1,[f"{channel.id}: [{channel.readForce():4.2f} N]" for channel in channels])
+			msg.force = channels[0].readForce()
+			msg.header.stamp = rospy.Time.now()
+			pub.publish(msg)
 			rate.sleep()
-	except (Exception, KeyboardInterrupt):
-		pass
+	# except (Exception, KeyboardInterrupt):
+	# 	pass
 
 	# Close your Phidgets once the program is done.
 	for channel in channels:
